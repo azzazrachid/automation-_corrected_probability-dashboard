@@ -715,4 +715,223 @@ def main():
                         stats = calculate_country_occupation_stats(occ_title, {browse_country: df})
                         
                         if browse_country in stats:
-                            st.markdown(f"### 🔍
+                            st.markdown(f"### 🔍 **{occ_title}** Analysis")
+                            
+                            country_info = COUNTRIES[browse_country]
+                            country_stats = stats[browse_country]
+                            
+                            # Display metrics
+                            metric_cols = st.columns(3)
+                            with metric_cols[0]:
+                                st.metric("🎯 Current (2024)", f"{country_stats['current_2024']:.4f}")
+                            with metric_cols[1]:
+                                st.metric("📅 2030 Outlook", f"{country_stats['outlook_2030']:.4f}")
+                            with metric_cols[2]:
+                                st.metric("🔮 2050 Projection", f"{country_stats['midterm_2050']:.4f}")
+                            
+                            # Create individual plot
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatter(
+                                x=country_stats['years'],
+                                y=country_stats['probabilities'],
+                                mode='lines+markers',
+                                name=f"{country_info['flag']} {country_info['name']}",
+                                line=dict(color=country_info['color'], width=4),
+                                marker=dict(size=8),
+                                fill='tonexty'
+                            ))
+                            
+                            fig.update_layout(
+                                title=f"Automation Probability: {occ_title}",
+                                xaxis_title="Year",
+                                yaxis_title="Automation Probability",
+                                height=400
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+    
+    with tab4:
+        st.markdown('<h2 class="sub-header">📈 Country Automation Rankings</h2>', unsafe_allow_html=True)
+        
+        # Year selector for rankings
+        ranking_year = st.selectbox(
+            "Select year for country rankings:",
+            options=[2024, 2030, 2040, 2050, 2060, 2070, 2080, 2090, 2100],
+            index=0
+        )
+        
+        year_index = ranking_year - 2017
+        
+        # Calculate country averages
+        country_averages = {}
+        occupation_counts = {}
+        
+        for country_code, df in country_data.items():
+            if len(df.columns) > year_index + 2:  # +2 for SOC and Title columns
+                avg_prob = df.iloc[:, year_index + 2].mean()
+                country_averages[country_code] = avg_prob
+                occupation_counts[country_code] = len(df)
+        
+        # Sort countries by average automation probability
+        sorted_countries = sorted(country_averages.items(), key=lambda x: x[1], reverse=True)
+        
+        # Display rankings
+        st.markdown(f"### 🏆 Country Rankings by Average Automation Probability ({ranking_year})")
+        
+        ranking_data = []
+        for rank, (country_code, avg_prob) in enumerate(sorted_countries, 1):
+            country_info = COUNTRIES[country_code]
+            
+            # Determine automation readiness level
+            if avg_prob > 0.6:
+                readiness = "🚀 Very High"
+            elif avg_prob > 0.4:
+                readiness = "⚡ High"
+            elif avg_prob > 0.2:
+                readiness = "📈 Medium"
+            else:
+                readiness = "🌍 Low"
+            
+            ranking_data.append({
+                'Rank': f"#{rank}",
+                'Country': f"{country_info['flag']} {country_info['name']}",
+                'Average Probability': f"{avg_prob:.4f}",
+                'Automation Readiness': readiness,
+                'Occupations Analyzed': occupation_counts[country_code],
+                'Description': country_info['description']
+            })
+        
+        ranking_df = pd.DataFrame(ranking_data)
+        st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+        
+        # Create ranking visualization
+        countries_list = [COUNTRIES[code]['name'] for code, _ in sorted_countries]
+        flags_list = [COUNTRIES[code]['flag'] for code, _ in sorted_countries]
+        probs_list = [prob for _, prob in sorted_countries]
+        colors_list = [COUNTRIES[code]['color'] for code, _ in sorted_countries]
+        
+        fig_ranking = go.Figure(data=[
+            go.Bar(
+                x=probs_list,
+                y=[f"{flag} {country}" for flag, country in zip(flags_list, countries_list)],
+                orientation='h',
+                marker=dict(color=colors_list),
+                text=[f"{prob:.3f}" for prob in probs_list],
+                textposition='auto',
+            )
+        ])
+        
+        fig_ranking.update_layout(
+            title=f"Average Automation Probability by Country ({ranking_year})",
+            xaxis_title="Average Automation Probability",
+            yaxis_title="Country",
+            height=500,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig_ranking, use_container_width=True)
+        
+        # Top/Bottom occupations analysis
+        st.markdown("### 🎯 Most & Least Automatable Occupations")
+        
+        analysis_country_rank = st.selectbox(
+            "Select country for top/bottom analysis:",
+            options=list(country_data.keys()),
+            format_func=lambda x: f"{COUNTRIES[x]['flag']} {COUNTRIES[x]['name']}",
+            key="rank_analysis_country"
+        )
+        
+        if analysis_country_rank:
+            df_rank = country_data[analysis_country_rank]
+            
+            if len(df_rank.columns) > year_index + 2:
+                # Get probabilities for selected year
+                year_probs = df_rank.iloc[:, [1, year_index + 2]].copy()  # Title and year probability
+                year_probs.columns = ['Occupation', 'Probability']
+                year_probs = year_probs.sort_values('Probability', ascending=False)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("#### 🔴 Most Automatable (Top 10)")
+                    top_10 = year_probs.head(10)
+                    for idx, row in top_10.iterrows():
+                        st.markdown(f"**{row['Occupation'][:50]}{'...' if len(row['Occupation']) > 50 else ''}**")
+                        st.progress(float(row['Probability']), text=f"{row['Probability']:.4f}")
+                        st.markdown("---")
+                
+                with col2:
+                    st.markdown("#### 🟢 Least Automatable (Bottom 10)")
+                    bottom_10 = year_probs.tail(10)
+                    for idx, row in bottom_10.iterrows():
+                        st.markdown(f"**{row['Occupation'][:50]}{'...' if len(row['Occupation']) > 50 else ''}**")
+                        st.progress(float(row['Probability']), text=f"{row['Probability']:.4f}")
+                        st.markdown("---")
+        
+        # Cross-country occupation comparison
+        st.markdown("### 🔄 Cross-Country Occupation Comparison")
+        
+        if len(country_data) >= 2:
+            # Find common occupations
+            common_occs = None
+            for country_code, df in country_data.items():
+                country_occs = set(df.iloc[:, 1].tolist())
+                if common_occs is None:
+                    common_occs = country_occs
+                else:
+                    common_occs = common_occs.intersection(country_occs)
+            
+            if common_occs and len(common_occs) > 0:
+                comparison_occ = st.selectbox(
+                    "Select occupation for cross-country comparison:",
+                    options=sorted(list(common_occs)),
+                    key="cross_country_occ"
+                )
+                
+                if comparison_occ:
+                    # Get probabilities for this occupation across countries
+                    cross_country_data = []
+                    
+                    for country_code, df in country_data.items():
+                        occ_row = df[df.iloc[:, 1] == comparison_occ]
+                        if not occ_row.empty and len(occ_row.iloc[0]) > year_index + 2:
+                            prob = occ_row.iloc[0, year_index + 2]
+                            country_info = COUNTRIES[country_code]
+                            
+                            cross_country_data.append({
+                                'Country': f"{country_info['flag']} {country_info['name']}",
+                                'Probability': prob,
+                                'Color': country_info['color']
+                            })
+                    
+                    if cross_country_data:
+                        cross_df = pd.DataFrame(cross_country_data)
+                        cross_df = cross_df.sort_values('Probability', ascending=False)
+                        
+                        # Create comparison chart
+                        fig_cross = go.Figure(data=[
+                            go.Bar(
+                                x=cross_df['Probability'],
+                                y=cross_df['Country'],
+                                orientation='h',
+                                marker=dict(color=cross_df['Color']),
+                                text=[f"{prob:.4f}" for prob in cross_df['Probability']],
+                                textposition='auto',
+                            )
+                        ])
+                        
+                        fig_cross.update_layout(
+                            title=f"Cross-Country Comparison: {comparison_occ} ({ranking_year})",
+                            xaxis_title="Automation Probability",
+                            yaxis_title="Country",
+                            height=400,
+                            showlegend=False
+                        )
+                        
+                        st.plotly_chart(fig_cross, use_container_width=True)
+                        
+                        # Display comparison table
+                        st.dataframe(cross_df[['Country', 'Probability']], hide_index=True, use_container_width=True)
+
+if __name__ == "__main__":
+    main()
